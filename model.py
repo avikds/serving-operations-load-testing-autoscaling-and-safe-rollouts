@@ -226,3 +226,62 @@ class ReplicaSim:
 
         return records
 
+# Step 4 - run_benchmark
+def run_benchmark(sim, requests, slo):
+    """Run a benchmark and summarize throughput, latency, and goodput."""
+    if not requests:
+        raise ValueError("requests must contain at least one request.")
+
+    records = sim.run(requests)
+
+    # Compute per-request metrics from the simulator output.
+    metrics = [
+        request_metrics(record["t_arrive"], record["token_times"])
+        for record in records
+    ]
+
+    first_arrival = min(record["t_arrive"] for record in records)
+    last_completion = max(record["t_done"] for record in records)
+    makespan = last_completion - first_arrival
+
+    if makespan <= 0:
+        raise ValueError("Benchmark makespan must be positive.")
+
+    total_requests = len(records)
+    total_output_tokens = sum(len(record["token_times"]) for record in records)
+
+    ttft_values = [m["ttft"] for m in metrics]
+    itl_values = [m["itl_mean"] for m in metrics]
+    e2e_values = [m["e2e"] for m in metrics]
+
+    # A request is counted as goodput only when both latency objectives
+    # are satisfied.
+    good_requests = sum(
+        1
+        for m in metrics
+        if m["ttft"] <= slo["ttft"] and m["itl_mean"] <= slo["itl"]
+    )
+
+    return {
+        "req_per_s": float(total_requests / makespan),
+        "tokens_per_s": float(total_output_tokens / makespan),
+        "ttft_p50": float(percentile(ttft_values, 0.50)),
+        "ttft_p99": float(percentile(ttft_values, 0.99)),
+        "itl_p50": float(percentile(itl_values, 0.50)),
+        "itl_p99": float(percentile(itl_values, 0.99)),
+        "e2e_p99": float(percentile(e2e_values, 0.99)),
+        "goodput": float(good_requests / total_requests),
+    }
+
+
+def format_benchmark(s):
+    """Format a benchmark summary as the requested single-line string."""
+    return (
+        f"{s['req_per_s']:6.2f} req/s "
+        f"{s['tokens_per_s']:8.1f} tok/s "
+        f"TTFT p50 {s['ttft_p50'] * 1000:6.0f} ms "
+        f"p99 {s['ttft_p99'] * 1000:6.0f} ms "
+        f"ITL p99 {s['itl_p99'] * 1000:5.1f} ms "
+        f"goodput {s['goodput']:5.1%}"
+    )
+

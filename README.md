@@ -13,6 +13,7 @@ python scaffold.py
 - [x] **1.** request_metrics
 - [x] **2.** arrival_times
 - [x] **3.** ReplicaSim
+- [x] **4.** run_benchmark
 
 ---
 
