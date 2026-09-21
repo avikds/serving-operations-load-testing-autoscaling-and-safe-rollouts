@@ -23,6 +23,7 @@ python scaffold.py
 - [x] **11.** canary_decision
 - [x] **12.** cost_per_million_tokens
 - [x] **13.** RollingSLO
+- [x] **14.** retry_with_backoff
 
 ---
 

@@ -816,3 +816,46 @@ class RollingSLO:
 
         return reasons
 
+# Step 14 - retry_with_backoff
+def is_retryable(status):
+    """Return whether an HTTP status should be retried."""
+    return status in {408, 429, 500, 502, 503, 504}
+
+
+def backoff_delay(attempt, base_s, cap_s, rng):
+    """Return a full-jitter exponential backoff delay."""
+    upper = min(cap_s, base_s * (2 ** attempt))
+    return rng.uniform(0.0, upper)
+
+
+def retry_with_backoff(call, max_attempts, base_s, cap_s, rng):
+    """Retry retryable responses with full-jitter exponential backoff."""
+    delays = []
+
+    for attempt in range(max_attempts):
+        status, payload = call()
+
+        # Return immediately for any non-retryable response.
+        if not is_retryable(status):
+            return {
+                "status": status,
+                "payload": payload,
+                "attempts": attempt + 1,
+                "delays": delays,
+            }
+
+        # No delay is needed after the final allowed attempt because
+        # there will be no subsequent retry.
+        if attempt < max_attempts - 1:
+            delays.append(
+                backoff_delay(attempt, base_s, cap_s, rng)
+            )
+
+    # All allowed attempts returned retryable responses.
+    return {
+        "status": status,
+        "payload": payload,
+        "attempts": max_attempts,
+        "delays": delays,
+    }
+
