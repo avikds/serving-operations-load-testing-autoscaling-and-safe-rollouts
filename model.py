@@ -72,3 +72,64 @@ def latency_summary(values):
         "mean": float(np.mean(values)),
     }
 
+# Step 2 - arrival_times
+def arrival_times(rate, duration, pattern, rng):
+    """Generate sorted request arrival times in [0, duration)."""
+    if rate <= 0:
+        raise ValueError("rate must be positive.")
+    if duration < 0:
+        raise ValueError("duration must be non-negative.")
+    if pattern not in {"constant", "poisson", "bursty"}:
+        raise ValueError("pattern must be 'constant', 'poisson', or 'bursty'.")
+
+    # Constant arrivals begin at t = 0 and occur every 1 / rate seconds.
+    if pattern == "constant":
+        return np.arange(0.0, duration, 1.0 / rate)
+
+    arrivals = []
+    t = 0.0
+
+    if pattern == "poisson":
+        while True:
+            t += rng.exponential(1.0 / rate)
+            if t >= duration:
+                break
+            arrivals.append(t)
+    else:
+        # Bursty traffic repeats a 10-second cycle:
+        #   0-2 s:  3 * rate
+        #   2-10 s: 0.5 * rate
+        # The rate is selected according to the current time before
+        # drawing each inter-arrival gap.
+        while t < duration:
+            phase = t % 10.0
+            current_rate = 3.0 * rate if phase < 2.0 else 0.5 * rate
+
+            t += rng.exponential(1.0 / current_rate)
+
+            if t >= duration:
+                break
+
+            arrivals.append(t)
+
+    return np.asarray(arrivals, dtype=float)
+
+
+def request_mix(times, rng, in_mean=400, out_mean=150):
+    """Create request metadata with input/output lengths for each arrival."""
+    requests = []
+
+    for request_id, t_arrive in enumerate(times):
+        # Draw input length first, then output length, as specified.
+        input_len = rng.integers(50, 2 * in_mean)
+        output_len = rng.integers(20, 2 * out_mean)
+
+        requests.append({
+            "id": request_id,
+            "t_arrive": t_arrive,
+            "input_len": input_len,
+            "output_len": output_len,
+        })
+
+    return requests
+

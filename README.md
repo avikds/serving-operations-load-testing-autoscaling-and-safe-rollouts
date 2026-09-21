@@ -11,6 +11,7 @@ python scaffold.py
 ## Steps
 
 - [x] **1.** request_metrics
+- [x] **2.** arrival_times
 
 ---
 
