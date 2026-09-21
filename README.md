@@ -17,6 +17,7 @@ python scaffold.py
 - [x] **5.** throughput_latency_curve
 - [x] **6.** cold_start_seconds
 - [x] **7.** Autoscaler
+- [x] **8.** traffic_profile
 
 ---
 

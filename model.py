@@ -442,3 +442,37 @@ class Autoscaler:
 
         return self.replicas
 
+# Step 8 - traffic_profile
+def profile_times(duration_s, dt):
+    """Return sampling times from 0 up to duration_s, excluding the endpoint."""
+    return np.arange(0.0, duration_s, dt)
+
+
+def traffic_profile(kind, duration_s, dt, base=20.0, peak=60.0):
+    """Generate an offered-load profile sampled every dt seconds."""
+    times = profile_times(duration_s, dt)
+
+    if kind == "diurnal":
+        # One complete cosine cycle across the requested duration.
+        return base + (peak - base) * (
+            1.0 - np.cos(2.0 * np.pi * times / duration_s)
+        ) / 2.0
+
+    if kind == "spike":
+        # Baseline traffic with a 300-second spike beginning at one-third
+        # of the total simulation duration.
+        spike_start = duration_s / 3.0
+        spike_end = spike_start + 300.0
+
+        return np.where(
+            (times >= spike_start) & (times < spike_end),
+            peak,
+            base,
+        )
+
+    if kind == "ramp":
+        # Linear increase from base at t=0 toward peak at duration_s.
+        return base + (peak - base) * (times / duration_s)
+
+    raise ValueError("kind must be 'diurnal', 'spike', or 'ramp'.")
+
