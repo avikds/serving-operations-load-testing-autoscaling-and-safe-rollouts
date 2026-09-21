@@ -18,6 +18,7 @@ python scaffold.py
 - [x] **6.** cold_start_seconds
 - [x] **7.** Autoscaler
 - [x] **8.** traffic_profile
+- [x] **9.** simulate_fleet
 
 ---
 

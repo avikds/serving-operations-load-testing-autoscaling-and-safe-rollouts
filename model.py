@@ -476,3 +476,99 @@ def traffic_profile(kind, duration_s, dt, base=20.0, peak=60.0):
 
     raise ValueError("kind must be 'diurnal', 'spike', or 'ramp'.")
 
+# Step 9 - simulate_fleet
+def simulate_fleet(
+    load,
+    dt,
+    autoscaler,
+    cold_start_s,
+    replica_capacity,
+    latency_s=2.0,
+    max_wait_s=1.0,
+):
+    """Run a fluid fleet simulation with autoscaling and cold-start delays."""
+    load = np.asarray(load, dtype=float)
+
+    n = len(load)
+
+    # Ready replicas start at the autoscaler's current replica count.
+    ready = autoscaler.replicas
+
+    # Boot completion times for replicas that are not ready yet.
+    pending = []
+
+    # Backlog, measured in requests.
+    queue = 0.0
+
+    ready_series = np.zeros(n, dtype=float)
+    queue_series = np.zeros(n, dtype=float)
+    wait_series = np.zeros(n, dtype=float)
+
+    replica_seconds = 0.0
+
+    for i, offered_load in enumerate(load):
+        t = i * dt
+
+        # Any replica whose cold start has completed becomes ready before
+        # this tick's traffic is served.
+        completed = [boot_time for boot_time in pending if boot_time <= t]
+        if completed:
+            ready += len(completed)
+            pending = [boot_time for boot_time in pending if boot_time > t]
+
+        capacity = ready * replica_capacity
+
+        # Requests arriving during this tick are added to the existing
+        # backlog, then served up to the available replica capacity.
+        arrivals = offered_load * dt
+        incoming_queue = queue + arrivals
+        served = min(incoming_queue, capacity * dt)
+
+        queue = incoming_queue - served
+
+        # Approximate observed concurrency using offered traffic multiplied
+        # by latency, plus the currently queued requests.
+        concurrency = offered_load * latency_s + queue
+
+        desired = autoscaler.step(t, concurrency)
+
+        current_fleet = ready + len(pending)
+
+        # Scale up by creating only the replicas needed beyond the current
+        # ready + pending fleet. Every new replica pays the full cold-start.
+        if desired > current_fleet:
+            additional = desired - current_fleet
+            pending.extend([t + cold_start_s] * additional)
+
+        # Scale down ready replicas immediately when requested. Pending
+        # replicas are not cancelled because the specification only reduces
+        # the ready count.
+        elif desired < ready:
+            ready = max(0, desired)
+
+        wait = queue / capacity if capacity > 0 else np.inf
+
+        ready_series[i] = ready
+        queue_series[i] = queue
+        wait_series[i] = wait
+
+        # Pay for all replicas that are either ready or still booting.
+        replica_seconds += (ready + len(pending)) * dt
+
+    violation_fraction = (
+        float(np.mean(wait_series > max_wait_s))
+        if n > 0
+        else 0.0
+    )
+
+    peak_queue = float(np.max(queue_series)) if n > 0 else 0.0
+
+    return {
+        "ready": ready_series,
+        "queue": queue_series,
+        "wait": wait_series,
+        "replica_seconds": float(replica_seconds),
+        "violation_fraction": violation_fraction,
+        "peak_queue": peak_queue,
+    }
+
