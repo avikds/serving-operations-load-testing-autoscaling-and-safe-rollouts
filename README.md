@@ -16,6 +16,7 @@ python scaffold.py
 - [x] **4.** run_benchmark
 - [x] **5.** throughput_latency_curve
 - [x] **6.** cold_start_seconds
+- [x] **7.** Autoscaler
 
 ---
 

@@ -366,3 +366,79 @@ def scale_up_headroom(rise_per_min, cold_start_s, replica_capacity):
         (rise_per_min / 60.0) * cold_start_s / replica_capacity
     )
 
+# Step 7 - Autoscaler
+class Autoscaler:
+    def __init__(
+        self,
+        min_replicas,
+        max_replicas,
+        target_concurrency,
+        window_s,
+        scale_down_delay_s,
+    ):
+        self.min_replicas = min_replicas
+        self.max_replicas = max_replicas
+        self.target_concurrency = target_concurrency
+        self.window_s = window_s
+        self.scale_down_delay_s = scale_down_delay_s
+
+        # The fleet starts at the configured minimum.
+        self.replicas = min_replicas
+
+        # Store (time, concurrency) observations for the rolling window.
+        self._history = []
+
+        # Time at which the current scale-down deficit began.
+        self._scale_down_since = None
+
+    def step(self, t, concurrency):
+        # Record the current observation first so it is included in
+        # the interval (t - window_s, t].
+        self._history.append((t, concurrency))
+
+        window_start = t - self.window_s
+
+        # Keep only observations that are still relevant. The lower
+        # boundary is exclusive, matching (t - window_s, t].
+        self._history = [
+            (obs_t, obs_concurrency)
+            for obs_t, obs_concurrency in self._history
+            if obs_t > window_start and obs_t <= t
+        ]
+
+        # The current observation is always present for a normal step.
+        mean_concurrency = sum(
+            obs_concurrency for _, obs_concurrency in self._history
+        ) / len(self._history)
+
+        # Convert mean concurrency to the desired replica count and clamp
+        # it to the configured minimum and maximum.
+        desired = math.ceil(
+            mean_concurrency / self.target_concurrency
+        )
+        desired = max(self.min_replicas, min(self.max_replicas, desired))
+
+        # Scale up immediately whenever the desired count exceeds the
+        # current replica count.
+        if desired > self.replicas:
+            self.replicas = desired
+            self._scale_down_since = None
+
+        # A desired count at or above the current count means there is no
+        # active scale-down deficit, so reset the delay timer.
+        elif desired >= self.replicas:
+            self._scale_down_since = None
+
+        # Desired replicas are below the current count. Start the timer
+        # when the deficit is first observed, and scale down only after
+        # the deficit has persisted for the full configured delay.
+        else:
+            if self._scale_down_since is None:
+                self._scale_down_since = t
+
+            if t - self._scale_down_since >= self.scale_down_delay_s:
+                self.replicas = desired
+                self._scale_down_since = None
+
+        return self.replicas
+
