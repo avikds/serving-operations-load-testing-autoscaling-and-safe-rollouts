@@ -859,3 +859,71 @@ def retry_with_backoff(call, max_attempts, base_s, cap_s, rng):
         "delays": delays,
     }
 
+# Step 15 - SSEParser
+import json
+
+
+class SSEParser:
+    def __init__(self):
+        self.buffer = ""
+        self.done = False
+
+    def feed(self, chunk):
+        """Feed an arbitrary chunk and return all completed data payloads."""
+        self.buffer += chunk
+        payloads = []
+
+        # Process only complete SSE events. An event ends at a blank line.
+        while "\n\n" in self.buffer:
+            event, self.buffer = self.buffer.split("\n\n", 1)
+
+            data_lines = []
+
+            for line in event.split("\n"):
+                # Comments do not contribute to the event payload.
+                if line.startswith(":"):
+                    continue
+
+                # Only data fields are relevant; all other SSE fields
+                # are ignored.
+                if line.startswith("data:"):
+                    value = line[5:]
+
+                    # Remove one optional space after the "data:" prefix.
+                    if value.startswith(" "):
+                        value = value[1:]
+
+                    data_lines.append(value)
+
+            if not data_lines:
+                continue
+
+            payload = "\n".join(data_lines)
+
+            if payload == "[DONE]":
+                self.done = True
+                continue
+
+            payloads.append(payload)
+
+        return payloads
+
+
+def collect_stream(chunks):
+    """Parse a sequence of SSE chunks and concatenate token values."""
+    parser = SSEParser()
+    tokens = []
+
+    for chunk in chunks:
+        payloads = parser.feed(chunk)
+
+        for payload in payloads:
+            data = json.loads(payload)
+            tokens.append(data["token"])
+
+        # [DONE] is consumed by feed() and reflected by parser.done.
+        if parser.done:
+            break
+
+    return "".join(tokens)
+

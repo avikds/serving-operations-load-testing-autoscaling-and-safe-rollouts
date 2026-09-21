@@ -24,6 +24,7 @@ python scaffold.py
 - [x] **12.** cost_per_million_tokens
 - [x] **13.** RollingSLO
 - [x] **14.** retry_with_backoff
+- [x] **15.** SSEParser
 
 ---
 
