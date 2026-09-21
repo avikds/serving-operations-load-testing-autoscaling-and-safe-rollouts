@@ -285,3 +285,47 @@ def format_benchmark(s):
         f"goodput {s['goodput']:5.1%}"
     )
 
+# Step 5 - throughput_latency_curve
+def throughput_latency_curve(make_sim, rates, duration, slo, seed=0, pattern='poisson'):
+    curve = []
+
+    for rate in rates:
+        # Create a fresh RNG for each offered rate, as specified.
+        rng = np.random.default_rng(seed)
+
+        times = arrival_times(rate, duration, pattern, rng)
+        requests = request_mix(times, rng)
+
+        summary = run_benchmark(make_sim(), requests, slo)
+
+        curve.append({
+            "rate": rate,
+            "tokens_per_s": summary["tokens_per_s"],
+            "ttft_p99": summary["ttft_p99"],
+            "goodput": summary["goodput"],
+        })
+
+    return curve
+
+
+def capacity_knee(curve, min_goodput=0.95):
+    qualifying_rates = [
+        point["rate"]
+        for point in curve
+        if point["goodput"] >= min_goodput
+    ]
+
+    return max(qualifying_rates) if qualifying_rates else 0.0
+
+
+def format_curve(curve):
+    # Return one formatted string per curve point with the exact
+    # spacing expected by the project tests.
+    return [
+        f"offered {point['rate']:5.1f} req/s -> "
+        f"{point['tokens_per_s']:8.1f} tok/s  "
+        f"TTFT p99 {point['ttft_p99'] * 1000:7.0f} ms  "
+        f"goodput {point['goodput']:5.1%}"
+        for point in curve
+    ]
+

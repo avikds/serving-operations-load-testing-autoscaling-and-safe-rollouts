@@ -14,6 +14,7 @@ python scaffold.py
 - [x] **2.** arrival_times
 - [x] **3.** ReplicaSim
 - [x] **4.** run_benchmark
+- [x] **5.** throughput_latency_curve
 
 ---
 
