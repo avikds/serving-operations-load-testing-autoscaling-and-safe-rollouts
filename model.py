@@ -697,3 +697,60 @@ def canary_rollout(stages, evaluate, baseline, thresholds):
         "reasons": [],
     }
 
+# Step 12 - cost_per_million_tokens
+def cost_per_million_tokens(gpu_hourly, tokens_per_s, utilization=1.0):
+    """Return the effective cost for one million generated tokens."""
+    return (
+        gpu_hourly
+        / (tokens_per_s * 3600.0)
+        * 1e6
+        / utilization
+    )
+
+
+def break_even_monthly_tokens(monthly_dedicated, api_price_per_m):
+    """Return break-even monthly volume in millions of tokens."""
+    return monthly_dedicated / api_price_per_m
+
+
+def request_cost(
+    input_tokens,
+    output_tokens,
+    in_price_per_m,
+    out_price_per_m,
+):
+    """Return the cost of one request from input and output token pricing."""
+    return (
+        input_tokens / 1e6 * in_price_per_m
+        + output_tokens / 1e6 * out_price_per_m
+    )
+
+
+def fleet_bill(replica_seconds, gpu_hourly):
+    """Return the GPU bill for the supplied replica-seconds."""
+    return replica_seconds / 3600.0 * gpu_hourly
+
+
+def cost_report(sim_result, gpu_hourly, replica_capacity, tokens_per_request):
+    """Summarize fleet cost using the capacity that was online."""
+    bill = fleet_bill(
+        sim_result["replica_seconds"],
+        gpu_hourly,
+    )
+
+    # The project specifies dt = 1 second here, so each ready replica
+    # contributes replica_capacity * tokens_per_request tokens per tick.
+    tokens_served = (
+        sim_result["ready"].sum()
+        * replica_capacity
+        * tokens_per_request
+    )
+
+    cost_per_m = bill / tokens_served * 1e6
+
+    return {
+        "bill": float(bill),
+        "tokens_served": float(tokens_served),
+        "cost_per_m": float(cost_per_m),
+    }
+
