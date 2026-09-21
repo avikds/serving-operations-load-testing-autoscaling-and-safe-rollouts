@@ -133,3 +133,96 @@ def request_mix(times, rng, in_mean=400, out_mean=150):
 
     return requests
 
+# Step 3 - ReplicaSim
+class ReplicaSim:
+    def __init__(self, max_batch, prefill_tokens_per_s, decode_ms_base, decode_ms_per_seq):
+        self.max_batch = max_batch
+        self.prefill_tokens_per_s = prefill_tokens_per_s
+        self.decode_ms_base = decode_ms_base
+        self.decode_ms_per_seq = decode_ms_per_seq
+
+    def run(self, requests):
+        # Process requests in arrival order and keep a reference to each
+        # request's output record so the final result can be returned in
+        # the original request order.
+        waiting = list(requests)
+        active = []
+        records = [
+            {
+                "id": req["id"],
+                "t_arrive": req["t_arrive"],
+                "token_times": [],
+                "t_done": None,
+            }
+            for req in requests
+        ]
+
+        # Map request id to its result record.
+        record_by_id = {record["id"]: record for record in records}
+
+        t = 0.0
+        next_waiting = 0
+
+        while next_waiting < len(waiting) or active:
+            # When the replica is idle, advance directly to the next arrival.
+            if not active and next_waiting < len(waiting):
+                t = max(t, waiting[next_waiting]["t_arrive"])
+
+            # Admit all requests that have already arrived, subject to
+            # the maximum batch size. Admission preserves arrival order.
+            prefill_time = 0.0
+
+            while (
+                next_waiting < len(waiting)
+                and len(active) < self.max_batch
+                and waiting[next_waiting]["t_arrive"] <= t
+            ):
+                req = waiting[next_waiting]
+                record = record_by_id[req["id"]]
+
+                active.append({
+                    "request": req,
+                    "record": record,
+                })
+
+                prefill_time += req["input_len"] / self.prefill_tokens_per_s
+                next_waiting += 1
+
+            # There should only be no active work when there are no requests
+            # left to process. The loop otherwise advances to the next arrival.
+            if not active:
+                continue
+
+            # A decode step includes all prefill work from newly admitted
+            # sequences followed by one decode iteration for the active batch.
+            decode_time = (
+                self.decode_ms_base
+                + self.decode_ms_per_seq * len(active)
+            ) / 1000.0
+
+            t += prefill_time + decode_time
+
+            # Every active sequence emits exactly one token at the end of
+            # this step, including requests admitted at the beginning of it.
+            finished = []
+
+            for item in active:
+                req = item["request"]
+                record = item["record"]
+
+                record["token_times"].append(t)
+
+                if len(record["token_times"]) >= req["output_len"]:
+                    record["t_done"] = t
+                    finished.append(item)
+
+            # Remove requests that have generated their complete output.
+            if finished:
+                finished_set = {id(item) for item in finished}
+                active = [
+                    item for item in active
+                    if id(item) not in finished_set
+                ]
+
+        return records
+
