@@ -22,6 +22,7 @@ python scaffold.py
 - [x] **10.** tune_autoscaler
 - [x] **11.** canary_decision
 - [x] **12.** cost_per_million_tokens
+- [x] **13.** RollingSLO
 
 ---
 

@@ -754,3 +754,65 @@ def cost_report(sim_result, gpu_hourly, replica_capacity, tokens_per_request):
         "cost_per_m": float(cost_per_m),
     }
 
+# Step 13 - RollingSLO
+class RollingSLO:
+    def __init__(self, window_s, thresholds):
+        self.window_s, self.thresholds = window_s, thresholds
+        self.records = []
+
+    def ingest(self, t, latency_ms, ok):
+        """Record one completed request."""
+        self.records.append((t, latency_ms, ok))
+
+    def snapshot(self, t):
+        """Return SLO metrics for records in the rolling window."""
+        window_start = t - self.window_s
+
+        records = [
+            record
+            for record in self.records
+            if window_start < record[0] <= t
+        ]
+
+        n = len(records)
+
+        if n == 0:
+            p99_ms = 0.0
+            error_rate = 0.0
+        else:
+            latencies = [record[1] for record in records]
+            errors = sum(1 for record in records if not record[2])
+
+            # Preserve the percentile result's original numeric type.
+            p99_ms = percentile(latencies, 0.99)
+            error_rate = errors / n
+
+        rps = n / self.window_s
+
+        return {
+            "p99_ms": p99_ms,
+            "error_rate": error_rate,
+            "rps": rps,
+            "n": n,
+        }
+
+    def alerts(self, t):
+        """Return breached SLO conditions in the required order."""
+        snapshot = self.snapshot(t)
+        reasons = []
+
+        # Latency and error checks apply only when the window contains
+        # at least one completed request.
+        if snapshot["n"] > 0:
+            if snapshot["p99_ms"] > self.thresholds["p99_ms"]:
+                reasons.append("latency")
+
+            if snapshot["error_rate"] > self.thresholds["error_rate"]:
+                reasons.append("errors")
+
+        # Traffic is checked even when the window is empty.
+        if snapshot["rps"] < self.thresholds["min_rps"]:
+            reasons.append("traffic")
+
+        return reasons
+
