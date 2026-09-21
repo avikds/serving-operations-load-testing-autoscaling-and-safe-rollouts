@@ -643,3 +643,57 @@ def format_tuning(results, best):
         for result in results
     ]
 
+# Step 11 - canary_decision
+def canary_decision(baseline, canary, thresholds):
+    """Decide whether a canary should be promoted or rolled back."""
+    reasons = []
+
+    # Check failures in the required order: latency, errors, quality.
+    if canary["p99_ms"] > baseline["p99_ms"] * (
+        1.0 + thresholds["latency_rel"]
+    ):
+        reasons.append("latency")
+
+    if canary["error_rate"] > (
+        baseline["error_rate"] + thresholds["error_abs"]
+    ):
+        reasons.append("errors")
+
+    if canary["quality"] < (
+        baseline["quality"] - thresholds["quality_abs"]
+    ):
+        reasons.append("quality")
+
+    if reasons:
+        return "rollback", reasons
+
+    return "promote", []
+
+
+def canary_rollout(stages, evaluate, baseline, thresholds):
+    """Evaluate each rollout stage and stop at the first rollback."""
+    last_stage = None
+
+    for stage in stages:
+        last_stage = stage
+
+        canary = evaluate(stage)
+        status, reasons = canary_decision(
+            baseline,
+            canary,
+            thresholds,
+        )
+
+        if status == "rollback":
+            return {
+                "status": "rolled_back",
+                "reached": last_stage,
+                "reasons": reasons,
+            }
+
+    return {
+        "status": "promoted",
+        "reached": last_stage,
+        "reasons": [],
+    }
+

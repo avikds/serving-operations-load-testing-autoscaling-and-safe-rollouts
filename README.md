@@ -20,6 +20,7 @@ python scaffold.py
 - [x] **8.** traffic_profile
 - [x] **9.** simulate_fleet
 - [x] **10.** tune_autoscaler
+- [x] **11.** canary_decision
 
 ---
 
