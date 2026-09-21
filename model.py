@@ -329,3 +329,40 @@ def format_curve(curve):
         for point in curve
     ]
 
+# Step 6 - cold_start_seconds
+def cold_start_breakdown(
+    image_gb,
+    image_bw_gbps,
+    weight_gb,
+    weight_bw_gbps,
+    init_s,
+    warmup_s,
+    provision_s=0.0,
+):
+    """Return the cold-start time broken down by startup stage."""
+    return {
+        "provision": float(provision_s),
+        "image_pull": float(image_gb / image_bw_gbps),
+        "weight_load": float(weight_gb / weight_bw_gbps),
+        "init": float(init_s),
+        "warmup": float(warmup_s),
+    }
+
+
+def cold_start_seconds(**kwargs):
+    """Return the total cold-start time across all stages."""
+    breakdown = cold_start_breakdown(**kwargs)
+    return float(sum(breakdown.values()))
+
+
+def largest_stage(breakdown):
+    """Return the name of the longest cold-start stage."""
+    return max(breakdown, key=breakdown.get)
+
+
+def scale_up_headroom(rise_per_min, cold_start_s, replica_capacity):
+    """Return spare replicas needed to absorb traffic during cold start."""
+    return math.ceil(
+        (rise_per_min / 60.0) * cold_start_s / replica_capacity
+    )
+

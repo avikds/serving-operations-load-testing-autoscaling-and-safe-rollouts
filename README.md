@@ -15,6 +15,7 @@ python scaffold.py
 - [x] **3.** ReplicaSim
 - [x] **4.** run_benchmark
 - [x] **5.** throughput_latency_curve
+- [x] **6.** cold_start_seconds
 
 ---
 
