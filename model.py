@@ -572,3 +572,74 @@ def simulate_fleet(
         "peak_queue": peak_queue,
     }
 
+# Step 10 - tune_autoscaler
+def evaluate_config(cfg, load, dt, cold_start_s, replica_capacity, gpu_hourly):
+    """Evaluate one autoscaler configuration against the traffic profile."""
+    autoscaler = Autoscaler(**cfg)
+
+    simulation = simulate_fleet(
+        load,
+        dt,
+        autoscaler,
+        cold_start_s,
+        replica_capacity,
+    )
+
+    replica_hours = simulation["replica_seconds"] / 3600.0
+    cost = replica_hours * gpu_hourly
+
+    return {
+        "cfg": cfg,
+        "violation_fraction": float(simulation["violation_fraction"]),
+        "replica_hours": float(replica_hours),
+        "cost": float(cost),
+    }
+
+
+def tune_autoscaler(
+    candidates,
+    load,
+    dt,
+    cold_start_s,
+    replica_capacity,
+    gpu_hourly,
+    violation_budget=0.02,
+):
+    """Evaluate all candidates and select the cheapest qualifying config."""
+    results = [
+        evaluate_config(
+            cfg,
+            load,
+            dt,
+            cold_start_s,
+            replica_capacity,
+            gpu_hourly,
+        )
+        for cfg in candidates
+    ]
+
+    qualifying = [
+        result
+        for result in results
+        if result["violation_fraction"] <= violation_budget
+    ]
+
+    best = min(qualifying, key=lambda result: result["cost"]) if qualifying else None
+
+    return best, results
+
+
+def format_tuning(results, best):
+    """Format autoscaler tuning results as one line per configuration."""
+    return [
+        f"{'*' if result is best else ' '} "
+        f"min {result['cfg']['min_replicas']:2d} "
+        f"max {result['cfg']['max_replicas']:2d} "
+        f"target {result['cfg']['target_concurrency']:3d} "
+        f"window {result['cfg']['window_s']:4.0f}s "
+        f"delay {result['cfg']['scale_down_delay_s']:4.0f}s "
+        f"-> violations {result['violation_fraction']:5.1%} "
+        f"cost ${result['cost']:8.2f}"
+        for result in results
+    ]
+
